@@ -1,4 +1,55 @@
 # Leandro-Almeida
+
+Cotação de voo executivo web app com conversão NM↔KM, múltiplas pernas, mapa Leaflet e lookup de aeroportos via AVWX.
+
+## Configurar AVWX_TOKEN (token AVWX)
+
+O projeto usa a API AVWX para obter METARs e coordenadas de estações. Configure o token AVWX para que chamadas autenticadas funcionem em desenvolvimento e em deploy.
+
+Fontes do token (ordem de prioridade):
+
+1. Variável de ambiente `AVWX_TOKEN` (recomendada para servidores/CI).
+2. Campo na UI `Token AVWX` (apenas para testes locais no navegador).
+3. `localStorage` no navegador (quando o token for inserido pela UI, ele é salvo localmente).
+
+Instruções rápidas — desenvolvimento local
+
+1. Exportar a variável no shell (Linux/macOS):
+
+```bash
+export AVWX_TOKEN="seu_token_aqui"
+npm test
+```
+
+No Windows PowerShell:
+
+```powershell
+$env:AVWX_TOKEN = "seu_token_aqui"
+npm test
+```
+
+2. Alternativa: abra `index.html` em http://localhost:8080 e cole o token no campo "Token AVWX". O token será salvo no `localStorage` do navegador.
+
+Deployment (exemplos)
+
+- GitHub Actions: defina o secret `AVWX_TOKEN` nas configurações do repositório e exporte-o como variável de ambiente no workflow.
+- Netlify: em Site settings → Build & deploy → Environment → Add variable `AVWX_TOKEN`.
+- Vercel: em Settings → Environment Variables → adicionar `AVWX_TOKEN` para os ambientes desejados.
+
+Observações de segurança
+
+- Não comite o token no repositório. Use secrets/env vars do provedor de CI.
+- Para produção, prefira um backend/proxy que armazene o token com segurança e faça as chamadas ao AVWX do lado servidor, evitando expor o token no cliente.
+
+
+To regenerate the vendored jsdom tarball, run:
+
+```
+npm pack jsdom@24.0.0
+mkdir -p vendor
+mv jsdom-24.0.0.tgz vendor/
+```
+# Leandro-Almeida
 <!DOCTYPE html>
 <html lang="pt-BR">
 <head>
@@ -117,14 +168,14 @@
 
     function gerarPreOrcamento() {
       const aeronave = document.getElementById("aeronave").value;
-      const nm = parseFloat(document.getElementById("nm").value);
+  const nm = parseFloat(document.getElementById("nm").value) || 0;
       const origem = document.getElementById("origem").value;
       const destino = document.getElementById("destino").value;
       const valorExtra = parseFloat(document.getElementById("valorExtra").value) || 0;
       const tipoExtra = document.getElementById("tipoExtra").value;
 
       const km = nm * 1.852;
-      const valorKm = valoresKm[aeronave];
+  const valorKm = valoresKm[aeronave] || 0;
       let total = km * valorKm;
 
       let labelExtra = "";
@@ -151,7 +202,7 @@
 
     function gerarPDF() {
       const aeronave = document.getElementById("aeronave").value;
-      const nm = parseFloat(document.getElementById("nm").value);
+      const nm = parseFloat(document.getElementById("nm").value) || 0;
       const origem = document.getElementById("origem").value;
       const destino = document.getElementById("destino").value;
       const dataIda = document.getElementById("dataIda").value;
@@ -162,10 +213,10 @@
       const tipoExtra = document.getElementById("tipoExtra").value;
 
       const km = nm * 1.852;
-      const valorKm = valoresKm[aeronave];
+      const valorKm = valoresKm[aeronave] || 0;
       let total = km * valorKm;
 
-      let ajustes = "";
+      let ajustes = null;
       if (valorExtra > 0 && incluirNoPDF) {
         if (tipoExtra === "soma") {
           total += valorExtra;
@@ -175,17 +226,18 @@
           ajustes = { text: `Desconto: R$ ${valorExtra.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}`, margin: [0, 10, 0, 0] };
         }
       }
+      const content = [
+        { text: "Cotação de Voo Executivo", style: "header" },
+        { text: `Origem: ${origem} → Destino: ${destino}`, margin: [0, 10, 0, 0] },
+        { text: `Aeronave: ${aeronave}` },
+        { text: `Data Ida: ${dataIda} | Data Volta: ${dataVolta}` }
+      ];
+      if (ajustes) content.push(ajustes);
+      content.push({ text: `Total Final: R$ ${total.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}`, bold: true, margin: [0, 10, 0, 0] });
+      if (observacoes) content.push({ text: `Observações: ${observacoes}`, margin: [0, 10, 0, 0] });
 
       const docDefinition = {
-        content: [
-          { text: "Cotação de Voo Executivo", style: "header" },
-          { text: `Origem: ${origem} → Destino: ${destino}`, margin: [0, 10, 0, 0] },
-          { text: `Aeronave: ${aeronave}` },
-          { text: `Data Ida: ${dataIda} | Data Volta: ${dataVolta}` },
-          ajustes,
-          { text: `Total Final: R$ ${total.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}`, bold: true, margin: [0, 10, 0, 0] },
-          observacoes ? { text: `Observações: ${observacoes}`, margin: [0, 10, 0, 0] } : null
-        ],
+        content,
         styles: {
           header: {
             fontSize: 18,
@@ -195,7 +247,7 @@
       };
 
       const nomeArquivo = `Cotacao_${aeronave}_${origem}_${destino}.pdf`.replace(/\s+/g, "_");
-      pdfMake.createPdf(docDefinition).open(); // Abre em nova aba
+      pdfMake.createPdf(docDefinition).download(nomeArquivo);
     }
   </script>
 
