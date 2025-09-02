@@ -1,4 +1,72 @@
 # Leandro-Almeida
+
+Cotação de voo executivo web app com conversão NM↔KM, múltiplas pernas, mapa Leaflet e lookup de aeroportos via AVWX.
+
+## Documentação rápida
+
+- Fórmulas principais:
+  - KM = NM × 1.852
+  - Subtotal (Método 1) = KM × Tarifa por km
+  - Tempo por perna = Distância (NM) / KTAS (nós) → horas decimais
+  - Total por hora (Método 2) = (soma horas por perna) × Valor-hora (R$/h)
+  - Comissões aplicadas sobre a base (mesma função usada para ambos os métodos)
+
+- Limitações conhecidas:
+  - AVWX token embutido no código em alguns ambientes de teste; para produção, use variável de ambiente `AVWX_TOKEN` ou um backend seguro.
+  - Rascunhos agora usam storage versionado com prefixo `app:quote:` (ex: `app:quote:draft`). Migração automática tenta ler `cotacao:currentDraft` se existir.
+
+## QA e checklist
+
+Um checklist de QA manual e passos de regressão está disponível em `scripts/QA_CHECKLIST.md` — siga-o antes de criar PRs de release.
+
+## Configurar AVWX_TOKEN (token AVWX)
+
+O projeto usa a API AVWX para obter METARs e coordenadas de estações. Configure o token AVWX para que chamadas autenticadas funcionem em desenvolvimento e em deploy.
+
+Fontes do token (ordem de prioridade):
+
+1. Variável de ambiente `AVWX_TOKEN` (recomendada para servidores/CI).
+2. Campo na UI `Token AVWX` (apenas para testes locais no navegador).
+3. `localStorage` no navegador (quando o token for inserido pela UI, ele é salvo localmente).
+
+Instruções rápidas — desenvolvimento local
+
+1. Exportar a variável no shell (Linux/macOS):
+
+```bash
+export AVWX_TOKEN="seu_token_aqui"
+npm test
+```
+
+No Windows PowerShell:
+
+```powershell
+$env:AVWX_TOKEN = "seu_token_aqui"
+npm test
+```
+
+2. Alternativa: abra `index.html` em http://localhost:8080 e cole o token no campo "Token AVWX". O token será salvo no `localStorage` do navegador.
+
+Deployment (exemplos)
+
+- GitHub Actions: defina o secret `AVWX_TOKEN` nas configurações do repositório e exporte-o como variável de ambiente no workflow.
+- Netlify: em Site settings → Build & deploy → Environment → Add variable `AVWX_TOKEN`.
+- Vercel: em Settings → Environment Variables → adicionar `AVWX_TOKEN` para os ambientes desejados.
+
+Observações de segurança
+
+- Não comite o token no repositório. Use secrets/env vars do provedor de CI.
+- Para produção, prefira um backend/proxy que armazene o token com segurança e faça as chamadas ao AVWX do lado servidor, evitando expor o token no cliente.
+
+
+To regenerate the vendored jsdom tarball, run:
+
+```
+npm pack jsdom@24.0.0
+mkdir -p vendor
+mv jsdom-24.0.0.tgz vendor/
+```
+# Leandro-Almeida
 <!DOCTYPE html>
 <html lang="pt-BR">
 <head>
