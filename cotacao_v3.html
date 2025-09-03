@@ -1,0 +1,277 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Cotação de Voo Executivo v3</title>
+  <link rel="stylesheet" href="https://unpkg.com/leaflet/dist/leaflet.css" />
+  <script src="https://unpkg.com/leaflet/dist/leaflet.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/pdfmake/0.2.7/pdfmake.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/pdfmake/0.2.7/vfs_fonts.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/html2canvas@1.4.1/dist/html2canvas.min.js"></script>
+  <style>
+    :root {
+      --primary:#0d6efd;
+      --primary-hover:#0b5ed7;
+      --bg:#f8f9fa;
+      --surface:#fff;
+      --text:#212529;
+      --border:#ced4da;
+    }
+    [data-theme="dark"]{
+      --bg:#212529;
+      --surface:#2c3035;
+      --text:#f8f9fa;
+      --border:#495057;
+    }
+    body{margin:0;font-family:'Segoe UI',Tahoma,sans-serif;background:var(--bg);color:var(--text);} 
+    .container{max-width:900px;margin:0 auto;padding:20px;}
+    h1{text-align:center;margin-bottom:1.5rem;}
+    label{font-weight:600;display:block;margin-top:15px;}
+    input,select,textarea{width:100%;padding:8px;margin-top:5px;border:1px solid var(--border);border-radius:4px;background:var(--surface);color:var(--text);} 
+    input.icao{text-transform:uppercase;letter-spacing:.04em;}
+    input:focus,select:focus,textarea:focus{outline:2px solid var(--primary);outline-offset:2px;}
+    .linha{display:flex;flex-wrap:wrap;gap:15px;}
+    .linha>div{flex:1 1 200px;}
+    .botoes{margin-top:30px;display:flex;flex-wrap:wrap;gap:10px;}
+    button{padding:12px 20px;font-size:16px;cursor:pointer;border:none;border-radius:4px;background:var(--primary);color:#fff;transition:background .2s;}
+    button:hover{background:var(--primary-hover);} 
+    #resultado{margin-top:30px;padding:20px;background:var(--surface);border:1px solid var(--border);border-radius:6px;}
+    #map{height:400px;margin-top:20px;border:1px solid var(--border);border-radius:6px;}
+    #tarifaPreview{margin-top:4px;font-size:.9rem;color:#444;font-weight:500;}
+    .themeToggle{float:right;margin-top:-3.5rem;}
+  </style>
+</head>
+<body>
+  <main class="container">
+    <h1>Cotação de Voo Executivo</h1>
+    <button class="themeToggle" id="themeToggle" aria-pressed="false">🌙 Tema</button>
+
+    <label for="aeronave">Aeronave:</label>
+    <select id="aeronave">
+      <option value="" disabled selected>Escolha uma aeronave</option>
+      <option value="Hawker 400">Hawker 400 — R$36,00/km</option>
+      <option value="Phenom 100">Phenom 100 — R$36,00/km</option>
+      <option value="Citation II">Citation II — R$36,00/km</option>
+      <option value="King Air C90">King Air C90 — R$30,00/km</option>
+      <option value="Sêneca IV">Sêneca IV — R$22,00/km</option>
+      <option value="Cirrus SR22">Cirrus SR22 — R$15,00/km</option>
+    </select>
+
+    <label for="tarifa">Tarifa por km (R$):</label>
+    <input type="number" id="tarifa" step="0.01" />
+    <div id="tarifaPreview"></div>
+
+    <div class="linha">
+      <div>
+        <label for="nm">Distância (NM):</label>
+        <input type="number" id="nm" />
+      </div>
+      <div>
+        <label for="km">Distância (KM):</label>
+        <input type="number" id="km" />
+      </div>
+      <div>
+        <label for="origem">Origem (ICAO):</label>
+        <input type="text" id="origem" class="icao" maxlength="4" oninput="this.value=this.value.toUpperCase().replace(/[^A-Z]/g,'').slice(0,4);" />
+      </div>
+      <div>
+        <label for="destino">Destino (ICAO):</label>
+        <input type="text" id="destino" class="icao" maxlength="4" oninput="this.value=this.value.toUpperCase().replace(/[^A-Z]/g,'').slice(0,4);" />
+      </div>
+    </div>
+
+    <div id="stops"></div>
+    <button id="addStop" type="button">Adicionar Aeroporto</button>
+
+    <div class="linha">
+      <div>
+        <label for="dataIda">Data Ida:</label>
+        <input type="date" id="dataIda" />
+      </div>
+      <div>
+        <label for="dataVolta">Data Volta:</label>
+        <input type="date" id="dataVolta" />
+      </div>
+    </div>
+
+    <label for="valorExtra">Acréscimo ou Desconto:</label>
+    <input type="number" id="valorExtra" placeholder="Valor em R$" />
+    <select id="tipoExtra">
+      <option value="soma">Adicionar</option>
+      <option value="subtrai">Subtrair</option>
+    </select>
+
+    <section id="commission-component" role="region" aria-labelledby="commissionTitle" style="margin-top:1rem">
+      <h3 id="commissionTitle" style="position:absolute;left:-9999px;top:-9999px;">Comissão</h3>
+      <button type="button" id="btnAddCommission" aria-pressed="false" style="padding:.6rem .9rem;border:1px solid var(--primary);border-radius:.75rem;background:var(--primary);color:#fff;cursor:pointer">Adicionar comissão</button>
+      <div id="commissionPanel" hidden style="margin-top:.75rem;padding:1rem;border:1px solid #eee;border-radius:.75rem;background:#fafafa">
+        <label for="commissionPercent" style="display:block;font-size:.95rem;margin-bottom:.4rem">Percentual da comissão (%)</label>
+        <input id="commissionPercent" type="number" min="0" max="100" step="0.1" value="5" inputmode="decimal" aria-describedby="commissionHelp" style="width:120px;padding:.5rem;border:1px solid var(--border);border-radius:.5rem" />
+        <div id="commissionHelp" style="font-size:.85rem;color:#666;margin-top:.35rem">A comissão será aplicada sobre a base conforme as regras informadas no sistema.</div>
+        <output id="commissionPreview" style="display:block;margin-top:.75rem;font-weight:600">Comissão: R$ 0,00</output>
+      </div>
+      <input type="hidden" id="commissionAmount" value="0" />
+    </section>
+
+    <label for="pagamento">Dados para pagamento:</label>
+    <textarea id="pagamento" rows="5">INTER - 077
+AUTOCON SUPRIMENTOS DE INFORMATICA
+CNPJ: 36.326.772/0001-65
+Agência: 0001
+Conta: 25691815-5</textarea>
+
+    <label for="observacoes">Observações:</label>
+    <textarea id="observacoes" rows="4"></textarea>
+
+    <div id="pdfFilters">
+      <h4>Campos do PDF</h4>
+      <label><input type="checkbox" id="showRota" checked /> Rota</label>
+      <label><input type="checkbox" id="showAeronave" checked /> Aeronave</label>
+      <label><input type="checkbox" id="showTarifa" checked /> Tarifa</label>
+      <label><input type="checkbox" id="showDistancia" checked /> Distância</label>
+      <label><input type="checkbox" id="showDatas" checked /> Datas</label>
+      <label><input type="checkbox" id="showAjuste" checked /> Ajuste</label>
+      <label><input type="checkbox" id="showObservacoes" checked /> Observações</label>
+      <label><input type="checkbox" id="showPagamento" checked /> Pagamento</label>
+      <label for="pdfCommissionToggle" style="margin-right:1rem;display:inline-flex;align-items:center;gap:.4rem;"><input type="checkbox" id="pdfCommissionToggle" checked> Comissão</label>
+    </div>
+
+    <div class="botoes">
+      <button onclick="gerarPreOrcamento()">Gerar Pré-Orçamento</button>
+      <button onclick="gerarPDF()">Gerar PDF</button>
+      <button onclick="limparCampos()">Limpar</button>
+    </div>
+
+    <div id="resultado"></div>
+    <div id="map"></div>
+  </main>
+
+  <script>
+    const valoresKm = {
+      'Hawker 400': 36,
+      'Phenom 100': 36,
+      'Citation II': 36,
+      'King Air C90': 30,
+      'Sêneca IV': 22,
+      'Cirrus SR22': 15
+    };
+    const fmt = n=>new Intl.NumberFormat('pt-BR',{style:'currency',currency:'BRL'}).format(n||0);
+
+    const selAeronave=document.getElementById('aeronave');
+    const tarifaInput=document.getElementById('tarifa');
+    const tarifaPreview=document.getElementById('tarifaPreview');
+    selAeronave.addEventListener('change',()=>{
+      const valor=valoresKm[selAeronave.value]||0;
+      tarifaInput.value=valor.toFixed(2);
+      tarifaPreview.textContent=valor?`Tarifa selecionada: R$ ${valor.toFixed(2)}/km`:'';
+    });
+
+    const nmInput=document.getElementById('nm');
+    const kmInput=document.getElementById('km');
+    nmInput.addEventListener('input',()=>{
+      const nm=parseFloat(nmInput.value);
+      kmInput.value=nm?(nm*1.852).toFixed(2):'';
+    });
+    kmInput.addEventListener('input',()=>{
+      const km=parseFloat(kmInput.value);
+      nmInput.value=km?(km/1.852).toFixed(2):'';
+    });
+
+    // commission module
+    const commissionRoot=document.getElementById('commission-component');
+    const btnAdd=commissionRoot.querySelector('#btnAddCommission');
+    const panel=commissionRoot.querySelector('#commissionPanel');
+    const percentInput=commissionRoot.querySelector('#commissionPercent');
+    const preview=commissionRoot.querySelector('#commissionPreview');
+    const amountHidden=commissionRoot.querySelector('#commissionAmount');
+    const commissionState={enabled:false,percent:Number(percentInput.value)||0};
+    btnAdd.addEventListener('click',()=>{
+      commissionState.enabled=!commissionState.enabled;
+      panel.hidden=!commissionState.enabled;
+      btnAdd.setAttribute('aria-pressed',String(commissionState.enabled));
+      btnAdd.textContent=commissionState.enabled?'Remover comissão':'Adicionar comissão';
+      if(!commissionState.enabled){amountHidden.value='0';preview.textContent='Comissão: R$ 0,00';}
+    });
+    percentInput.addEventListener('input',()=>{
+      commissionState.percent=Math.max(0,Number(percentInput.value)||0);
+    });
+    function calcularComissao(base){
+      if(!commissionState.enabled) return 0;
+      const valor=base*(commissionState.percent/100);
+      amountHidden.value=valor.toFixed(2);
+      preview.textContent='Comissão: '+fmt(valor);
+      return valor;
+    }
+
+    function gerarPreOrcamento(){
+      const aeronave=selAeronave.value;
+      const km=parseFloat(kmInput.value)||0;
+      const tarifa=parseFloat(tarifaInput.value)||0;
+      const origem=document.getElementById('origem').value.toUpperCase();
+      const destino=document.getElementById('destino').value.toUpperCase();
+      const valorExtra=parseFloat(document.getElementById('valorExtra').value)||0;
+      const tipoExtra=document.getElementById('tipoExtra').value;
+
+      let total=km*tarifa;
+      const comissao=calcularComissao(total);
+      total+=comissao;
+      let labelExtra='';
+      if(valorExtra>0){
+        total=tipoExtra==='soma'?total+valorExtra:total-valorExtra;
+        labelExtra=tipoExtra==='soma'?`+ ${fmt(valorExtra)} (outras despesas) `:`- ${fmt(valorExtra)} (desconto)`;
+      }
+      document.getElementById('resultado').innerHTML=
+        `<h3>Pré-Orçamento</h3>
+         <p><strong>Origem:</strong> ${origem}</p>
+         <p><strong>Destino:</strong> ${destino}</p>
+         <p><strong>Aeronave:</strong> ${aeronave}</p>
+         <p><strong>Distância:</strong> ${nmInput.value||0} NM (${km.toFixed(2)} km)</p>
+         ${labelExtra?`<p><strong>Ajuste:</strong> ${labelExtra}</p>`:''}
+         ${comissao?`<p><strong>Comissão:</strong> ${fmt(comissao)}</p>`:''}
+         <p><strong>Total Estimado:</strong> ${fmt(total)}</p>`;
+      return {aeronave,origem,destino,total,km,labelExtra,comissao};
+    }
+
+    function gerarPDF(){
+      const dados=gerarPreOrcamento();
+      const content=[{text:'Cotação de Voo Executivo',style:'header'}];
+      if(document.getElementById('showRota').checked)
+        content.push({text:`Origem: ${dados.origem} → Destino: ${dados.destino}`,margin:[0,10,0,0]});
+      if(document.getElementById('showAeronave').checked)
+        content.push({text:`Aeronave: ${dados.aeronave}`});
+      if(document.getElementById('showTarifa').checked)
+        content.push({text:`Tarifa: R$ ${tarifaInput.value}/km`});
+      if(document.getElementById('showDistancia').checked)
+        content.push({text:`Distância: ${nmInput.value||0} NM (${kmInput.value||0} km)`});
+      if(document.getElementById('showDatas').checked)
+        content.push({text:`Data Ida: ${document.getElementById('dataIda').value} | Data Volta: ${document.getElementById('dataVolta').value}`});
+      if(document.getElementById('showAjuste').checked && dados.labelExtra)
+        content.push({text:`Ajuste: ${dados.labelExtra}`});
+      if(document.getElementById('pdfCommissionToggle').checked && dados.comissao)
+        content.push({text:`Comissão: ${fmt(dados.comissao)}`});
+      if(document.getElementById('showObservacoes').checked && document.getElementById('observacoes').value)
+        content.push({text:`Observações: ${document.getElementById('observacoes').value}`});
+      if(document.getElementById('showPagamento').checked)
+        content.push({text:document.getElementById('pagamento').value,margin:[0,10,0,0]});
+      content.push({text:`Total Estimado: ${fmt(dados.total)}`,bold:true,margin:[0,10,0,0]});
+
+      const docDefinition={content,styles:{header:{fontSize:18,bold:true}}};
+      pdfMake.createPdf(docDefinition).open();
+    }
+
+    function limparCampos(){
+      document.querySelector('form')?.reset?.();
+      document.getElementById('resultado').innerHTML='';
+    }
+
+    // theme toggle
+    const themeToggle=document.getElementById('themeToggle');
+    themeToggle.addEventListener('click',()=>{
+      const dark=document.body.getAttribute('data-theme')==='dark';
+      document.body.setAttribute('data-theme',dark?'light':'dark');
+      themeToggle.setAttribute('aria-pressed',String(!dark));
+    });
+  </script>
+</body>
+</html>
