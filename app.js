@@ -141,6 +141,44 @@ function updateDistanceFromAirports(waypoints) {
   }
 }
 
+// Function to refresh route from ICAO inputs and update distance
+async function refreshRouteFromInputs(triggerPre = true) {
+  if (typeof document === 'undefined') return;
+  
+  const origem = (document.getElementById('origem') || {}).value || '';
+  const destino = (document.getElementById('destino') || {}).value || '';
+  const stops = Array.from(document.querySelectorAll('.stop-input')).map(i => (i.value || '').toUpperCase()).filter(Boolean);
+  
+  if (!origem || !destino) return;
+  
+  const codes = [origem, destino, ...stops];
+  const waypoints = [];
+  
+  for (const code of codes) {
+    const point = await fetchAirportByCode(code);
+    if (point) waypoints.push(point);
+  }
+  
+  if (waypoints.length >= 2) {
+    updateDistanceFromAirports(waypoints);
+  }
+}
+
+// Global reference for the refresh function
+if (typeof window !== 'undefined') {
+  window.refreshRouteFromInputs = refreshRouteFromInputs;
+  window.__refreshRouteNow = refreshRouteFromInputs;
+}
+
+// Currency formatting function
+function fmtBRL(value) {
+  return Number(value).toLocaleString('pt-BR', { 
+    style: 'currency', 
+    currency: 'BRL',
+    minimumFractionDigits: 2 
+  });
+}
+
 // Date synchronization helpers
 function initDateGuards() {
   const ida = document.getElementById('dataIda');
