@@ -8,7 +8,7 @@ const valoresKm = {
 };
 
 // AVWX API token para requisições autenticadas
-const API_KEY = 'A-O8WmcoXi-45UCYsIcH0O02KJh9x-eDKrI5AJLpqCs';
+const API_KEY = 'vzkql_FvqjyHBy7d8CuGoHVTmqtgO0TIBlFbVKZfyPI';
 
 let valorParcialFn = (distanciaKm, valorKm) => distanciaKm * valorKm;
 let valorTotalFn = (distanciaKm, valorKm, valorExtra = 0) =>
@@ -22,16 +22,139 @@ try {
   }
 } catch (e) { /* ignore fallback */ }
 
+// Global variables for map and route tracking
+let map = null;
+let routeLayer = null;
+const airportCache = new Map();
+
+// Haversine formula for calculating distance between two points on Earth
+function haversine(a, b) {
+  const R = 6371; // km
+  const toRad = deg => deg * Math.PI / 180;
+  const dLat = toRad(b.lat - a.lat);
+  const dLon = toRad(b.lng - a.lng);
+  const lat1 = toRad(a.lat);
+  const lat2 = toRad(b.lat);
+  const h = Math.sin(dLat / 2) ** 2 + Math.cos(lat1) * Math.cos(lat2) * Math.sin(dLon / 2) ** 2;
+  return 2 * R * Math.asin(Math.sqrt(h));
+}
+
+// Function to get AVWX headers with proper authentication
+function avwxHeaders() {
+  return API_KEY ? { Authorization: `BEARER ${API_KEY}` } : {};
+}
+
+// Function to fetch airport coordinates by ICAO code
+async function fetchAirportByCode(code) {
+  const icao = String(code || '').toUpperCase();
+  if (!/^[A-Z]{4}$/.test(icao)) return null;
+  if (airportCache.has(icao)) return airportCache.get(icao);
+  
+  try {
+    const headers = avwxHeaders();
+    const url = `https://avwx.rest/api/station/${icao}`;
+    const res = await fetch(url, { headers });
+    if (!res.ok) throw new Error('fetch failed');
+    const data = await res.json();
+
+    // Robust coordinate extraction: search recursively for lat/lon keys at any level
+    function findLatLon(obj, depth = 0) {
+      if (!obj || typeof obj !== 'object' || depth > 6) return null;
+      const keys = Object.keys(obj || {});
+      let latVal, lonVal;
+      
+      // First pass: look for lat/lon keys
+      for (const k of keys) {
+        const lk = k.toLowerCase();
+        if (lk.includes('lat')) latVal = obj[k];
+        if (lk.includes('lon') || lk.includes('lng') || lk.includes('long')) lonVal = obj[k];
+      }
+      
+      if (latVal !== undefined && lonVal !== undefined) {
+        const latN = Number(String(latVal).replace(',', '.'));
+        const lonN = Number(String(lonVal).replace(',', '.'));
+        if (Number.isFinite(latN) && Number.isFinite(lonN)) return { lat: latN, lng: lonN };
+      }
+      
+      // Second pass: recurse into nested objects
+      for (const k of keys) {
+        try {
+          const v = obj[k];
+          if (v && typeof v === 'object') {
+            const r = findLatLon(v, depth + 1);
+            if (r) return r;
+          }
+        } catch (e) { /* ignore */ }
+      }
+      return null;
+    }
+
+    const point = findLatLon(data);
+    airportCache.set(icao, point);
+    return point;
+  } catch {
+    airportCache.set(icao, null);
+    return null;
+  }
+}
+
+// Function to ensure map is initialized
+function ensureMap() {
+  if (typeof L === 'undefined') return;
+  const el = typeof document !== 'undefined' && document.getElementById('map');
+  if (!el) return;
+  if (!map) {
+    map = L.map('map', { preferCanvas: true }).setView([-15, -47], 4);
+    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+      attribution: '&copy; OpenStreetMap contributors'
+    }).addTo(map);
+    setTimeout(() => { try { map.invalidateSize(); } catch {} }, 0);
+  }
+}
+
+// Function to update distance calculation from airport waypoints
 function updateDistanceFromAirports(waypoints) {
   const nmInput = typeof document !== 'undefined' ? document.getElementById('nm') : null;
   const kmInput = typeof document !== 'undefined' ? document.getElementById('km') : null;
   const points = (waypoints || []).filter(p => p && Number.isFinite(p.lat) && Number.isFinite(p.lng));
 
+  ensureMap();
+
+  if (points.length < 2) {
+    if (routeLayer && typeof routeLayer.remove === 'function') routeLayer.remove();
+    routeLayer = null;
+    return;
+  }
+
+  let kmTotal = 0;
+  for (let i = 1; i < points.length; i++) kmTotal += haversine(points[i - 1], points[i]);
+  const nmTotal = kmTotal / 1.852;
+
+  if (nmInput) nmInput.value = nmTotal.toFixed(1);
+  if (kmInput) kmInput.value = kmTotal.toFixed(1);
+
+  if (typeof L !== 'undefined' && map) {
+    if (routeLayer) routeLayer.remove();
+    routeLayer = L.polyline(points.map(p => [p.lat, p.lng]), { color: 'red', weight: 3 }).addTo(map);
+    const bounds = L.latLngBounds(points.map(p => [p.lat, p.lng]));
+    map.fitBounds(bounds, { padding: [20, 20] });
+  }
+}
+
+// Date synchronization helpers
+function initDateGuards() {
+  const ida = document.getElementById('dataIda');
+  const volta = document.getElementById('dataVolta');
+  if (!ida || !volta) return;
+  
+  function syncVolta() {
+    const min = ida.value;
     if (volta.value && volta.value < min) volta.value = min;
-  if (volta.value && volta.value < min) volta.value = min;
-};
-ida.addEventListener('change', syncVolta);
-syncVolta();
+  }
+  
+  ida.addEventListener('change', syncVolta);
+  syncVolta();
+}
 function buildState() {
   const aeronave = (document.getElementById('aeronave') || {}).value || '';
   const nmField = document.getElementById('nm');
@@ -577,32 +700,58 @@ function buildDocDefinition(state) {
 
 async function gerarPDF(state) {
   const s = state || buildState();
+  if (typeof __refreshRouteNow === 'function') { await __refreshRouteNow(); }
   
-  // Validar se temos dados mínimos
-  if (!s.aeronave && (!s.valorKm || s.valorKm <= 0)) {
-    alert('Por favor, selecione uma aeronave ou informe a tarifa por km.');
-    return;
-  }
-  
-  if (!s.nm || s.nm <= 0) {
-    alert('Por favor, informe a distância ou preencha os aeroportos.');
-    return;
-  }
-  
-  try {
-    const docDefinition = buildDocDefinition(s);
-    
-    if (typeof pdfMake === 'undefined') {
-      console.error('pdfMake não está carregado');
-      alert('Erro: Biblioteca PDF não carregada. Recarregue a página.');
-      return;
+  let waypoints = [];
+  if (s.showMapa) {
+    const codes = [s.origem, s.destino, ...(s.stops || [])];
+    for (const code of codes) {
+      const point = await fetchAirportByCode(code);
+      if (point) waypoints.push(point);
     }
-    
-    pdfMake.createPdf(docDefinition).download('cotacao-voo.pdf');
-  } catch (error) {
-    console.error('Erro ao gerar PDF:', error);
-    alert('Erro ao gerar PDF. Verifique o console para mais detalhes.');
+    updateDistanceFromAirports(waypoints);
   }
+  
+  const docDefinition = buildDocDefinition(s);
+  
+  // Diagnóstico: detectar content vazio ou inválido
+  let isBlank = false;
+  try {
+    if (!docDefinition || !Array.isArray(docDefinition.content)) isBlank = true;
+    else {
+      const meaningful = docDefinition.content.some(item => {
+        if (!item) return false;
+        if (typeof item.text === 'string' && item.text.trim() !== '') return true;
+        if (item.table || item.columns || item.stack || item.canvas) return true;
+        return false;
+      });
+      if (!meaningful) isBlank = true;
+    }
+  } catch { isBlank = true; }
+
+  let finalDef = docDefinition;
+  if (isBlank) {
+    console.warn('[PDF] Detectado docDefinition possivelmente em branco. Gerando fallback. State:', s, 'Doc:', docDefinition);
+    finalDef = {
+      pageSize: 'A4',
+      pageMargins: [40,60,40,60],
+      content: [
+        { text: 'Pré-Orçamento', fontSize: 16, bold: true, margin: [0,0,0,12] },
+        { text: 'Não foi possível montar o layout completo do PDF. Este é um fallback automático.', fontSize: 9, color: 'red', margin:[0,0,0,12] },
+        { text: JSON.stringify({ aeronave: s.aeronave, nm: s.nm, origem: s.origem, destino: s.destino }, null, 2), fontSize: 8 }
+      ]
+    };
+  }
+
+  if (typeof pdfMake !== 'undefined') {
+    try {
+      pdfMake.createPdf(finalDef).open();
+    } catch (e) {
+      console.error('[PDF] Erro ao abrir PDF principal, usando fallback mínimo.', e);
+      try { pdfMake.createPdf({ content: [{ text: 'Erro ao gerar PDF', color: 'red' }, { text: String(e), fontSize: 8 }] }).open(); } catch {}
+    }
+  }
+  return finalDef;
 }
 
 function limparCampos() {
@@ -662,5 +811,14 @@ if (typeof window !== 'undefined') {
 }
 
 if (typeof module !== 'undefined') {
-  module.exports = { buildState, buildDocDefinition, gerarPDF, calcularComissao };
+  module.exports = { 
+    buildState, 
+    buildDocDefinition, 
+    gerarPDF, 
+    calcularComissao, 
+    fetchAirportByCode,
+    updateDistanceFromAirports,
+    haversine,
+    avwxHeaders
+  };
 }
