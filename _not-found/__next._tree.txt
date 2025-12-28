@@ -1,0 +1,2 @@
+:HL["/Leandro-Almeida/_next/static/chunks/22b370c33f9493bd.css","style"]
+0:{"buildId":"M3P0ODV-tnZ0q8WL6s2eH","tree":{"name":"","paramType":null,"paramKey":"","hasRuntimePrefetch":false,"slots":{"children":{"name":"/_not-found","paramType":null,"paramKey":"/_not-found","hasRuntimePrefetch":false,"slots":{"children":{"name":"__PAGE__","paramType":null,"paramKey":"__PAGE__","hasRuntimePrefetch":false,"slots":null,"isRootLayout":false}},"isRootLayout":false}},"isRootLayout":true},"staleTime":300}
