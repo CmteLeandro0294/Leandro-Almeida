@@ -4,6 +4,7 @@ import { useState, useEffect, useCallback } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { themes, ThemeType, ThemeConfig } from '../lib/themeConfig';
 import VisualHint from './VisualHint';
+import Image from 'next/image';
 
 interface GameProps {
   themeId: ThemeType;
@@ -141,13 +142,32 @@ export default function GameContainer({ themeId, onBack }: GameProps) {
 
   if (gameComplete) {
     return (
-      <div className={`min-h-screen flex flex-col items-center justify-center p-4 ${currentTheme.background}`}>
+      <div className={`min-h-screen flex flex-col items-center justify-center p-4 relative overflow-hidden ${currentTheme.background}`}>
+        {/* Background Image */}
+        <div className="absolute inset-0 opacity-20">
+          <Image
+            src={currentTheme.backgroundImage}
+            alt="Background"
+            fill
+            className="object-cover"
+            priority
+          />
+        </div>
+        
         <motion.div
           initial={{ scale: 0 }}
           animate={{ scale: 1 }}
-          className="bg-white rounded-3xl p-8 shadow-2xl text-center max-w-md"
+          className="bg-white rounded-3xl p-8 shadow-2xl text-center max-w-md relative z-10"
         >
-          <div className="text-6xl mb-4">🏆</div>
+          <div className="relative w-32 h-32 mx-auto mb-4">
+            <Image
+              src="/images/trophy.png"
+              alt="Troféu"
+              fill
+              className="object-contain"
+              sizes="128px"
+            />
+          </div>
           <h1 className="text-3xl font-bold text-gray-800 mb-2">Parabéns!</h1>
           <p className="text-xl text-gray-600 mb-4">{currentTheme.texts.welcome.replace('Bem-vindo', 'Incrível')}</p>
           <div className="bg-gray-100 rounded-xl p-4 mb-6">
@@ -174,23 +194,40 @@ export default function GameContainer({ themeId, onBack }: GameProps) {
   }
 
   return (
-    <div className={`min-h-screen flex flex-col items-center justify-center p-4 font-sans ${currentTheme.background}`}>
+    <div className={`min-h-screen flex flex-col items-center justify-center p-4 font-sans relative overflow-hidden ${currentTheme.background}`}>
+      {/* Background Image */}
+      <div className="absolute inset-0 opacity-30">
+        <Image
+          src={currentTheme.backgroundImage}
+          alt="Background"
+          fill
+          className="object-cover"
+          priority
+        />
+      </div>
+
       {/* Botão Voltar */}
       <button
         onClick={onBack}
-        className="absolute top-4 right-4 bg-white/20 backdrop-blur-sm text-white p-3 rounded-full hover:bg-white/40 transition shadow-lg"
+        className="absolute top-4 right-4 bg-white/20 backdrop-blur-sm text-white p-3 rounded-full hover:bg-white/40 transition shadow-lg z-20"
       >
         🔄 Trocar
       </button>
 
       {/* Cabeçalho */}
-      <div className="absolute top-6 left-6 flex items-center gap-3">
+      <div className="absolute top-6 left-6 flex items-center gap-3 z-20">
         <motion.div
           animate={{ y: [0, -10, 0] }}
           transition={{ repeat: Infinity, duration: 2 }}
-          className="text-5xl filter drop-shadow-lg"
+          className="relative w-16 h-16 filter drop-shadow-lg"
         >
-          {currentTheme.avatar}
+          <Image
+            src={currentTheme.avatarImage}
+            alt={currentTheme.name}
+            fill
+            className="object-contain"
+            sizes="64px"
+          />
         </motion.div>
         <div>
           <p className="text-white/90 font-bold text-sm drop-shadow-md">
@@ -203,12 +240,12 @@ export default function GameContainer({ themeId, onBack }: GameProps) {
       </div>
 
       {/* Pontuação */}
-      <div className="absolute top-6 left-1/2 -translate-x-1/2 bg-white/20 backdrop-blur-sm rounded-full px-6 py-2">
+      <div className="absolute top-6 left-1/2 -translate-x-1/2 bg-white/20 backdrop-blur-sm rounded-full px-6 py-2 z-20">
         <p className="text-white font-bold text-lg">⭐ {score}</p>
       </div>
 
       {/* Barra de Progresso */}
-      <div className="absolute top-20 left-1/2 -translate-x-1/2 w-64 bg-white/20 rounded-full h-3 overflow-hidden">
+      <div className="absolute top-20 left-1/2 -translate-x-1/2 w-64 bg-white/20 rounded-full h-3 overflow-hidden z-20">
         <motion.div
           className="h-full bg-yellow-400"
           initial={{ width: 0 }}
@@ -222,7 +259,7 @@ export default function GameContainer({ themeId, onBack }: GameProps) {
         key={levelIndex}
         initial={{ opacity: 0, y: 50 }}
         animate={{ opacity: 1, y: 0 }}
-        className="bg-white rounded-3xl shadow-2xl p-8 w-full max-w-md mt-16"
+        className="bg-white rounded-3xl shadow-2xl p-8 w-full max-w-md mt-16 relative z-10"
       >
         {/* Operação */}
         <div className="text-center mb-6">
@@ -288,7 +325,7 @@ export default function GameContainer({ themeId, onBack }: GameProps) {
             initial={{ opacity: 0, y: 30 }}
             animate={{ opacity: 1, y: 0 }}
             exit={{ opacity: 0, y: 30 }}
-            className="mt-6 w-full max-w-md"
+            className="mt-6 w-full max-w-md relative z-10"
           >
             <VisualHint
               num1={currentLevel.num1}
