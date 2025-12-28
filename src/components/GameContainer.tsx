@@ -3,6 +3,16 @@
 import { useState, useEffect, useCallback } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { themes, ThemeType, ThemeConfig } from '../lib/themeConfig';
+import { 
+  getRandomStory, 
+  generateRandomProblem, 
+  formatStoryContext,
+  operationNames,
+  operationSymbols,
+  operationEmojis,
+  OperationType,
+  StoryTemplate
+} from '../lib/storyEngine';
 import VisualHint from './VisualHint';
 import Image from 'next/image';
 
@@ -11,91 +21,61 @@ interface GameProps {
   onBack: () => void;
 }
 
-interface Level {
+interface CurrentProblem {
   num1: number;
   num2: number;
-  operation: 'soma' | 'subtracao' | 'multiplicacao' | 'divisao';
   answer: number;
 }
 
-const operationSymbols: Record<string, string> = {
-  soma: '+',
-  subtracao: '-',
-  multiplicacao: '×',
-  divisao: '÷',
-};
-
-// Gera níveis progressivos
-function generateLevels(): Level[] {
-  const levels: Level[] = [];
-
-  // Soma fácil (1-5)
-  for (let i = 0; i < 5; i++) {
-    const num1 = Math.floor(Math.random() * 5) + 1;
-    const num2 = Math.floor(Math.random() * 5) + 1;
-    levels.push({ num1, num2, operation: 'soma', answer: num1 + num2 });
-  }
-
-  // Subtração fácil
-  for (let i = 0; i < 5; i++) {
-    const num1 = Math.floor(Math.random() * 5) + 3;
-    const num2 = Math.floor(Math.random() * (num1 - 1)) + 1;
-    levels.push({ num1, num2, operation: 'subtracao', answer: num1 - num2 });
-  }
-
-  // Soma média (5-10)
-  for (let i = 0; i < 5; i++) {
-    const num1 = Math.floor(Math.random() * 5) + 5;
-    const num2 = Math.floor(Math.random() * 5) + 1;
-    levels.push({ num1, num2, operation: 'soma', answer: num1 + num2 });
-  }
-
-  // Multiplicação fácil
-  for (let i = 0; i < 5; i++) {
-    const num1 = Math.floor(Math.random() * 3) + 2;
-    const num2 = Math.floor(Math.random() * 4) + 2;
-    levels.push({ num1, num2, operation: 'multiplicacao', answer: num1 * num2 });
-  }
-
-  // Divisão fácil (divisões exatas)
-  const divisoes = [
-    { num1: 4, num2: 2 },
-    { num1: 6, num2: 2 },
-    { num1: 6, num2: 3 },
-    { num1: 8, num2: 2 },
-    { num1: 9, num2: 3 },
-  ];
-  for (const d of divisoes) {
-    levels.push({ ...d, operation: 'divisao', answer: d.num1 / d.num2 });
-  }
-
-  return levels;
-}
+const CHAPTERS_PER_GAME = 5;
 
 export default function GameContainer({ themeId, onBack }: GameProps) {
   const currentTheme: ThemeConfig = themes[themeId];
 
-  const [levels, setLevels] = useState<Level[]>([]);
-  const [levelIndex, setLevelIndex] = useState(0);
+  // Estado do jogo
+  const [story, setStory] = useState<StoryTemplate | null>(null);
+  const [currentOperation, setCurrentOperation] = useState<OperationType>('soma');
+  const [chapterIndex, setChapterIndex] = useState(0);
+  const [currentProblem, setCurrentProblem] = useState<CurrentProblem | null>(null);
   const [userAnswer, setUserAnswer] = useState('');
   const [showHint, setShowHint] = useState(false);
   const [feedback, setFeedback] = useState<'correct' | 'wrong' | null>(null);
   const [score, setScore] = useState(0);
   const [hintsUsed, setHintsUsed] = useState(0);
   const [gameComplete, setGameComplete] = useState(false);
+  const [showOperationSelector, setShowOperationSelector] = useState(false);
+  const [showStoryIntro, setShowStoryIntro] = useState(true);
+  const [difficulty, setDifficulty] = useState(1);
 
+  // Inicializa o jogo com uma história aleatória
   useEffect(() => {
-    setLevels(generateLevels());
+    const newStory = getRandomStory(themeId);
+    setStory(newStory);
+    generateNewProblem('soma', 1);
+  }, [themeId]);
+
+  // Gera um novo problema matemático
+  const generateNewProblem = useCallback((operation: OperationType, diff: number) => {
+    const problem = generateRandomProblem(operation, diff);
+    setCurrentProblem(problem);
   }, []);
 
-  const currentLevel = levels[levelIndex];
+  // Muda a operação
+  const changeOperation = (newOperation: OperationType) => {
+    setCurrentOperation(newOperation);
+    generateNewProblem(newOperation, difficulty);
+    setShowOperationSelector(false);
+    setUserAnswer('');
+    setShowHint(false);
+  };
 
+  // Verifica a resposta
   const checkAnswer = useCallback(() => {
-    if (!currentLevel || userAnswer === '') return;
+    if (!currentProblem || userAnswer === '') return;
 
     const numAnswer = parseInt(userAnswer, 10);
 
-    if (numAnswer === currentLevel.answer) {
+    if (numAnswer === currentProblem.answer) {
       setFeedback('correct');
       setScore((prev) => prev + (showHint ? 5 : 10));
 
@@ -104,8 +84,12 @@ export default function GameContainer({ themeId, onBack }: GameProps) {
         setShowHint(false);
         setUserAnswer('');
 
-        if (levelIndex < levels.length - 1) {
-          setLevelIndex((prev) => prev + 1);
+        if (chapterIndex < CHAPTERS_PER_GAME - 1) {
+          setChapterIndex((prev) => prev + 1);
+          const newDifficulty = Math.min(difficulty + 1, 5);
+          setDifficulty(newDifficulty);
+          generateNewProblem(currentOperation, newDifficulty);
+          setShowStoryIntro(true);
         } else {
           setGameComplete(true);
         }
@@ -114,25 +98,32 @@ export default function GameContainer({ themeId, onBack }: GameProps) {
       setFeedback('wrong');
       setTimeout(() => setFeedback(null), 1000);
     }
-  }, [currentLevel, userAnswer, showHint, levelIndex, levels.length]);
+  }, [currentProblem, userAnswer, showHint, chapterIndex, currentOperation, difficulty, generateNewProblem]);
 
+  // Mostra a dica
   const handleHint = () => {
     setShowHint(true);
     setHintsUsed((prev) => prev + 1);
   };
 
+  // Reinicia o jogo
   const restartGame = () => {
-    setLevels(generateLevels());
-    setLevelIndex(0);
+    const newStory = getRandomStory(themeId);
+    setStory(newStory);
+    setChapterIndex(0);
+    setDifficulty(1);
+    generateNewProblem(currentOperation, 1);
     setUserAnswer('');
     setShowHint(false);
     setFeedback(null);
     setScore(0);
     setHintsUsed(0);
     setGameComplete(false);
+    setShowStoryIntro(true);
   };
 
-  if (levels.length === 0) {
+  // Loading
+  if (!story || !currentProblem) {
     return (
       <div className={`min-h-screen flex items-center justify-center ${currentTheme.background}`}>
         <div className="text-4xl animate-spin">🌀</div>
@@ -140,10 +131,13 @@ export default function GameContainer({ themeId, onBack }: GameProps) {
     );
   }
 
+  const currentChapter = story.chapters[chapterIndex];
+  const storyContext = formatStoryContext(currentChapter, currentProblem.num1, currentProblem.num2, currentOperation);
+
+  // Tela de vitória
   if (gameComplete) {
     return (
       <div className={`min-h-screen flex flex-col items-center justify-center p-4 relative overflow-hidden ${currentTheme.background}`}>
-        {/* Background Image */}
         <div className="absolute inset-0 opacity-20">
           <Image
             src={currentTheme.backgroundImage}
@@ -169,23 +163,23 @@ export default function GameContainer({ themeId, onBack }: GameProps) {
             />
           </div>
           <h1 className="text-3xl font-bold text-gray-800 mb-2">Parabéns!</h1>
-          <p className="text-xl text-gray-600 mb-4">{currentTheme.texts.welcome.replace('Bem-vindo', 'Incrível')}</p>
+          <p className="text-lg text-gray-600 mb-4 px-4">{story.finale}</p>
           <div className="bg-gray-100 rounded-xl p-4 mb-6">
             <p className="text-2xl font-bold text-gray-800">Pontuação: {score}</p>
             <p className="text-sm text-gray-500">Dicas usadas: {hintsUsed}</p>
           </div>
-          <div className="flex gap-3">
+          <div className="flex gap-3 flex-wrap justify-center">
             <button
               onClick={restartGame}
               className={`${currentTheme.buttonColor} text-white font-bold py-3 px-6 rounded-xl transition transform hover:scale-105`}
             >
-              Jogar Novamente
+              🔄 Nova Aventura
             </button>
             <button
               onClick={onBack}
               className="bg-gray-500 hover:bg-gray-600 text-white font-bold py-3 px-6 rounded-xl transition transform hover:scale-105"
             >
-              Trocar Tema
+              🎭 Trocar Tema
             </button>
           </div>
         </motion.div>
@@ -214,6 +208,59 @@ export default function GameContainer({ themeId, onBack }: GameProps) {
         🔄 Trocar
       </button>
 
+      {/* Seletor de Operação */}
+      <button
+        onClick={() => setShowOperationSelector(true)}
+        className="absolute top-4 right-28 bg-white/20 backdrop-blur-sm text-white px-4 py-3 rounded-full hover:bg-white/40 transition shadow-lg z-20 flex items-center gap-2"
+      >
+        {operationEmojis[themeId][currentOperation]} {operationNames[currentOperation]}
+      </button>
+
+      {/* Modal Seletor de Operação */}
+      <AnimatePresence>
+        {showOperationSelector && (
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4"
+            onClick={() => setShowOperationSelector(false)}
+          >
+            <motion.div
+              initial={{ scale: 0.8, opacity: 0 }}
+              animate={{ scale: 1, opacity: 1 }}
+              exit={{ scale: 0.8, opacity: 0 }}
+              className="bg-white rounded-3xl p-6 max-w-sm w-full"
+              onClick={(e) => e.stopPropagation()}
+            >
+              <h2 className="text-2xl font-bold text-center mb-4 text-gray-800">Escolha a Operação</h2>
+              <div className="grid grid-cols-2 gap-3">
+                {(['soma', 'subtracao', 'multiplicacao', 'divisao'] as OperationType[]).map((op) => (
+                  <button
+                    key={op}
+                    onClick={() => changeOperation(op)}
+                    className={`p-4 rounded-xl font-bold text-white transition transform hover:scale-105 ${
+                      currentOperation === op 
+                        ? currentTheme.buttonColor + ' ring-4 ring-yellow-400' 
+                        : 'bg-gray-400 hover:bg-gray-500'
+                    }`}
+                  >
+                    <span className="text-2xl block mb-1">{operationEmojis[themeId][op]}</span>
+                    <span className="text-sm">{operationNames[op]}</span>
+                  </button>
+                ))}
+              </div>
+              <button
+                onClick={() => setShowOperationSelector(false)}
+                className="w-full mt-4 bg-gray-200 hover:bg-gray-300 text-gray-700 font-bold py-3 rounded-xl transition"
+              >
+                Cancelar
+              </button>
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
       {/* Cabeçalho */}
       <div className="absolute top-6 left-6 flex items-center gap-3 z-20">
         <motion.div
@@ -234,7 +281,7 @@ export default function GameContainer({ themeId, onBack }: GameProps) {
             {currentTheme.texts.welcome}
           </p>
           <p className="text-white/70 text-xs">
-            {currentTheme.texts.level}: {levelIndex + 1}/{levels.length}
+            Capítulo {chapterIndex + 1}/{CHAPTERS_PER_GAME}
           </p>
         </div>
       </div>
@@ -249,54 +296,98 @@ export default function GameContainer({ themeId, onBack }: GameProps) {
         <motion.div
           className="h-full bg-yellow-400"
           initial={{ width: 0 }}
-          animate={{ width: `${((levelIndex + 1) / levels.length) * 100}%` }}
+          animate={{ width: `${((chapterIndex + 1) / CHAPTERS_PER_GAME) * 100}%` }}
           transition={{ duration: 0.5 }}
         />
       </div>
 
-      {/* Card da Questão */}
+      {/* Card da História e Questão */}
       <motion.div
-        key={levelIndex}
+        key={`${chapterIndex}-${currentOperation}`}
         initial={{ opacity: 0, y: 50 }}
         animate={{ opacity: 1, y: 0 }}
-        className="bg-white rounded-3xl shadow-2xl p-8 w-full max-w-md mt-16 relative z-10"
+        className="bg-white rounded-3xl shadow-2xl p-6 w-full max-w-lg mt-16 relative z-10"
       >
-        {/* Operação */}
-        <div className="text-center mb-6">
-          <p className="text-5xl font-bold text-gray-800 mb-2">
-            {currentLevel.num1} {operationSymbols[currentLevel.operation]} {currentLevel.num2} = ?
-          </p>
+        {/* Título do Capítulo */}
+        <div className="text-center mb-4">
+          <span className={`inline-block px-4 py-1 rounded-full text-sm font-bold text-white ${currentTheme.buttonColor.split(' ')[0]}`}>
+            {currentChapter.title}
+          </span>
         </div>
 
-        {/* Input de Resposta */}
-        <div className="flex gap-3 mb-4">
-          <input
-            type="number"
-            value={userAnswer}
-            onChange={(e) => setUserAnswer(e.target.value)}
-            onKeyDown={(e) => e.key === 'Enter' && checkAnswer()}
-            className="flex-1 text-center text-3xl font-bold border-4 border-gray-200 rounded-xl py-3 focus:border-blue-500 focus:outline-none transition"
-            placeholder="?"
-            autoFocus
-          />
-        </div>
+        {/* Intro da História (mostra apenas uma vez por capítulo) */}
+        <AnimatePresence>
+          {showStoryIntro && (
+            <motion.div
+              initial={{ opacity: 0, height: 0 }}
+              animate={{ opacity: 1, height: 'auto' }}
+              exit={{ opacity: 0, height: 0 }}
+              className="mb-4"
+            >
+              <p className="text-gray-600 text-center italic mb-3">
+                {currentChapter.intro}
+              </p>
+              <button
+                onClick={() => setShowStoryIntro(false)}
+                className={`w-full ${currentTheme.buttonColor} text-white font-bold py-2 px-4 rounded-xl transition transform hover:scale-105`}
+              >
+                Continuar a Aventura →
+              </button>
+            </motion.div>
+          )}
+        </AnimatePresence>
 
-        {/* Botões */}
-        <div className="flex gap-3">
-          <button
-            onClick={handleHint}
-            disabled={showHint}
-            className={`flex-1 ${showHint ? 'bg-gray-300 cursor-not-allowed' : 'bg-yellow-500 hover:bg-yellow-600'} text-white font-bold py-3 px-4 rounded-xl transition transform hover:scale-105 disabled:hover:scale-100`}
-          >
-            💡 {currentTheme.texts.hint}
-          </button>
-          <button
-            onClick={checkAnswer}
-            className={`flex-1 ${currentTheme.buttonColor} text-white font-bold py-3 px-4 rounded-xl shadow-lg transition transform hover:scale-105`}
-          >
-            ✅ Responder
-          </button>
-        </div>
+        {/* Desafio e Conta */}
+        {!showStoryIntro && (
+          <>
+            {/* Contexto da História */}
+            <div className="bg-gray-50 rounded-xl p-4 mb-4">
+              <p className="text-gray-700 text-center">
+                <span className="font-bold">{currentChapter.challenge}</span>
+              </p>
+              <p className="text-gray-500 text-sm text-center mt-2">
+                {storyContext}
+              </p>
+            </div>
+
+            {/* Operação Matemática */}
+            <div className="text-center mb-6">
+              <p className="text-5xl font-bold text-gray-800 mb-2">
+                {currentProblem.num1} {operationSymbols[currentOperation]} {currentProblem.num2} = ?
+              </p>
+            </div>
+
+            {/* Input de Resposta */}
+            <div className="flex gap-3 mb-4">
+              <input
+                type="number"
+                value={userAnswer}
+                onChange={(e) => setUserAnswer(e.target.value)}
+                onKeyDown={(e) => e.key === 'Enter' && checkAnswer()}
+                className="flex-1 text-center text-3xl font-bold border-4 border-gray-200 rounded-xl py-3 focus:border-blue-500 focus:outline-none transition"
+                placeholder="?"
+                autoFocus
+              />
+            </div>
+
+            {/* Botões */}
+            <div className="flex gap-3">
+              <button
+                onClick={handleHint}
+                disabled={showHint}
+                className={`flex-1 ${showHint ? 'bg-gray-300 cursor-not-allowed' : 'bg-yellow-500 hover:bg-yellow-600'} text-white font-bold py-3 px-4 rounded-xl transition transform hover:scale-105 disabled:hover:scale-100`}
+              >
+                💡 {currentTheme.texts.hint}
+              </button>
+              <button
+                onClick={checkAnswer}
+                className={`flex-1 ${currentTheme.buttonColor} text-white font-bold py-3 px-4 rounded-xl shadow-lg transition transform hover:scale-105`}
+              >
+                ✅ Responder
+              </button>
+            </div>
+          </>
+        )}
 
         {/* Feedback */}
         <AnimatePresence>
@@ -307,10 +398,10 @@ export default function GameContainer({ themeId, onBack }: GameProps) {
               exit={{ opacity: 0, scale: 0.5 }}
               className={`absolute inset-0 flex items-center justify-center rounded-3xl ${feedback === 'correct' ? 'bg-green-500/90' : 'bg-red-500/90'}`}
             >
-              <div className="text-center text-white">
+              <div className="text-center text-white p-4">
                 <p className="text-6xl mb-2">{feedback === 'correct' ? '🎉' : '😅'}</p>
-                <p className="text-2xl font-bold">
-                  {feedback === 'correct' ? 'Muito bem!' : 'Tente novamente!'}
+                <p className="text-2xl font-bold mb-2">
+                  {feedback === 'correct' ? currentChapter.success : 'Tente novamente!'}
                 </p>
               </div>
             </motion.div>
@@ -320,17 +411,17 @@ export default function GameContainer({ themeId, onBack }: GameProps) {
 
       {/* Dica Visual */}
       <AnimatePresence>
-        {showHint && currentLevel && (
+        {showHint && currentProblem && !showStoryIntro && (
           <motion.div
             initial={{ opacity: 0, y: 30 }}
             animate={{ opacity: 1, y: 0 }}
             exit={{ opacity: 0, y: 30 }}
-            className="mt-6 w-full max-w-md relative z-10"
+            className="mt-6 w-full max-w-lg relative z-10"
           >
             <VisualHint
-              num1={currentLevel.num1}
-              num2={currentLevel.num2}
-              operation={currentLevel.operation}
+              num1={currentProblem.num1}
+              num2={currentProblem.num2}
+              operation={currentOperation}
               theme={currentTheme}
             />
           </motion.div>
