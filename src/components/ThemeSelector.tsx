@@ -2,6 +2,7 @@
 
 import { ThemeType } from '../lib/themeConfig';
 import Image from 'next/image';
+import Link from 'next/link';
 
 interface Props {
   onSelect: (theme: ThemeType) => void;
@@ -86,6 +87,13 @@ export default function ThemeSelector({ onSelect }: Props) {
         </button>
 
       </div>
+
+      <Link
+        href="/mapa-alcance"
+        className="mt-10 inline-flex items-center gap-2 bg-sky-600 hover:bg-sky-500 text-white font-bold px-6 py-3 rounded-full transition transform hover:scale-105 shadow-lg"
+      >
+        🗺️ Mapa de Alcance de Voo
+      </Link>
     </div>
   );
 }
