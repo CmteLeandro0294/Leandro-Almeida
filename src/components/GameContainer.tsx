@@ -15,6 +15,7 @@ import {
 } from '../lib/storyEngine';
 import VisualHint from './VisualHint';
 import Image from 'next/image';
+import Link from 'next/link';
 
 interface GameProps {
   themeId: ThemeType;
@@ -181,6 +182,14 @@ export default function GameContainer({ themeId, onBack }: GameProps) {
             >
               🎭 Trocar Tema
             </button>
+            {themeId === 'piloto' && (
+              <Link
+                href="/mapa-alcance"
+                className="bg-sky-600 hover:bg-sky-500 text-white font-bold py-3 px-6 rounded-xl transition transform hover:scale-105"
+              >
+                🗺️ Alcance de Voo
+              </Link>
+            )}
           </div>
         </motion.div>
       </div>
